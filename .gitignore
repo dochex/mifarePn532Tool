@@ -3,3 +3,4 @@
    !/nfc-bin64/
    !.gitignore
    /src/knowData.txt
+   /bin
