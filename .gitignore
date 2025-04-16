@@ -4,3 +4,4 @@
    !.gitignore
    /src/knowData.txt
    /bin
+/nfc-bin64/**/*.mfd
