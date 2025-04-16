@@ -1,0 +1,33 @@
+
+.hex {
+	-fx-control-inner-background:#000000;
+	-fx-font-family: Consolas;
+	-fx-font-size: 12.0;
+	-fx-font-weight: bold;
+	-fx-highlight-fill: #00ff00;
+	-fx-highlight-text-fill: #000000;
+	-fx-text-fill: #00ff00; 
+	-fx-background-color: black;
+}
+
+.paneTitle {
+	-fx-background-color: black;
+}
+
+.hexPanel {
+	-fx-background-color : black;
+	-fx-text-fill: #00ff00;
+}
+
+.scroll-bar:horizontal .thumb,
+.scroll-bar:vertical .thumb {
+    -fx-background-color : derive(black, 90.0%);
+    -fx-background-insets : 2.0, 0.0, 0.0;
+    -fx-background-radius : 2.0em;
+}
+
+.textArea {
+	-fx-control-inner-background:#000000; 
+	-fx-font-family:Consolas
+}
+
