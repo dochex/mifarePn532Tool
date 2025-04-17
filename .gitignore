@@ -1,7 +1,10 @@
-   /*
+  /*
    !/src/
    !/nfc-bin64/
-   !.gitignore
+   .gitignore
    /src/knowData.txt
    /bin
-/nfc-bin64/**/*.mfd
+/.settings
+/.classpath
+/.project
+/nfc-bin64/sauvegarde/*.mfd
