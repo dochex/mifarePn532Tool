@@ -13,9 +13,9 @@
 <?import javafx.scene.layout.VBox?>
 <?import hexEditor.HexEditor?>
 
-<BorderPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="900.0" prefWidth="1200.0" xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1" fx:controller="mifareTools.MifareMainController">
+<BorderPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="800.0" prefWidth="1200.0" xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1" fx:controller="mifareTools.MifareMainController">
 	<top>
-		<HBox alignment="CENTER_LEFT" prefHeight="80.0" spacing="20.0" style="-fx-background-color: grey;" BorderPane.alignment="CENTER">
+		<HBox alignment="CENTER_LEFT" prefHeight="50.0" spacing="20.0" style="-fx-background-color: grey;" BorderPane.alignment="CENTER">
 			<padding>
 				<Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
 			</padding>
@@ -33,9 +33,9 @@
 					</items>
 				</ChoiceBox>
             <Button mnemonicParsing="false" onAction="#mfcuk" text="mfcuk" />
-            <Button mnemonicParsing="false" onAction="#saveDump" text="Enregistrer le dump" />
-            <Button mnemonicParsing="false" onAction="#openDump" text="Ouvrir un dump" />
-            <Button mnemonicParsing="false" onAction="#writeDump" text="Ecrire le dump" />
+            <Button mnemonicParsing="false" onAction="#saveDump" text="Save the dump" />
+            <Button mnemonicParsing="false" onAction="#openDump" text="Open a dump" />
+            <Button mnemonicParsing="false" onAction="#writeDump" text="Write all blocks to The Tag" />
 			</children>
 		</HBox>
 	</top>

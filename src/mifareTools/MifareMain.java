@@ -1,4 +1,3 @@
-
 package mifareTools;
 
 import javafx.application.Application;

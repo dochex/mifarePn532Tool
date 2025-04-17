@@ -27,7 +27,7 @@ public class FxHexView extends TextArea {
 	public FxHexView() {
 		super();
 		this.setPrefColumnCount(80);
-		this.setPrefRowCount(40);
+		this.setPrefRowCount(45);
 		this.setWrapText(true);
 		this.getStyleClass().add("hex");
 		this.addEventHandler(MouseEvent.MOUSE_CLICKED, new EventHandler<MouseEvent>() {
