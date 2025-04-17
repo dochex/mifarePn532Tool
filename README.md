@@ -21,6 +21,8 @@ This file can be see with the button 'ouvrir un dump'. The Keys found can be man
 
 We can also try to search a key with the 'mfcuk' button, but i never succeed with mfcuk.
 
+NB: The KeyA cannot never be reading with the access conditions, so when we read it it always appear as '00 00 00 00 00 00'. But when reading whith the 'mfoc-hardnested' way we can see it.
+
 ***** Writing to the Tag ****
 
 Before writing, it is important to know the access conditions of the sector in which we want to write. We have to kow the key who can read or not the blocks of the sector.
