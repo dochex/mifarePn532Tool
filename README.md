@@ -45,4 +45,8 @@ We have two way to write :
  At the bottom there is another button who can test the access condition. Put the three bytes and click
  The program only decode. If you want to encode you can go to this webside : https://slebe.dev/mifarecalc/
 
+ ***** Problem to resolve ****
+
+ I didn't succeed to update the UI during long communications with the pn532 (I think it brake the timeout), so be patient when reading or writing before seeing the result.
+
  ![Optional Text](https://github.com/dochex/mifarePn532Tool/blob/main/documentation/program.PNG)
