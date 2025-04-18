@@ -1,4 +1,3 @@
-
 package mifareTools;
 
 import java.io.BufferedReader;
@@ -149,19 +148,19 @@ HexEditor hexEditor;
 		contextMenu.getItems().addAll(item1);
 		hexEditor.getArea().setContextMenu(contextMenu);
 		SerialPort comPorts[] = SerialPort.getCommPorts();
-		int port = 0;
+		int port = -1;
 		for (int i = 0; i < comPorts.length; i++) {
 			if (comPorts[i].getDescriptivePortName().contains("USB")) {
 				textArea.appendText("find device at port comPorts[" + i + "]  " + comPorts[i].getDescriptivePortName() + "\n");
 				port = i;			
 			}
-		}	
-		serialPort = comPorts[port];
-		if (serialPort == null) {
-			textArea.appendText("No device found");
-            System.exit(0);
+		}
+		if (port == -1) {
+			textArea.appendText("No device found, Is an USB-to-Serial converter connected?\n");
+        }else {
+        	serialPort = comPorts[port];
+        	configureSerialPort();
         }
-		configureSerialPort();
 	}
 	
 	private void configureSerialPort() {

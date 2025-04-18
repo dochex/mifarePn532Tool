@@ -77,7 +77,6 @@
             <VBox alignment="CENTER" prefWidth="180.0" spacing="20.0" style="-fx-background-color: grey; -fx-border-color: white; -fx-border-width: 1px 1px 1px 0px;">
                <children>
                   <Button alignment="CENTER" mnemonicParsing="false" onAction="#readWithNewKeys" text="Read with KEY A or KEY B" />
-                  <Button mnemonicParsing="false" text="Add keys to  keys found" />
                </children>
                <HBox.margin>
                   <Insets />
