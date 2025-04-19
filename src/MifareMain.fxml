@@ -13,7 +13,7 @@
 <?import javafx.scene.layout.VBox?>
 <?import hexEditor.HexEditor?>
 
-<BorderPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="800.0" prefWidth="1200.0" xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1" fx:controller="mifareTools.MifareMainController">
+<BorderPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="800.0" prefWidth="1200.0" xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1" fx:controller="mifareTools.MifareMainController1">
 	<top>
 		<HBox alignment="CENTER_LEFT" prefHeight="50.0" spacing="20.0" style="-fx-background-color: grey;" BorderPane.alignment="CENTER">
 			<padding>

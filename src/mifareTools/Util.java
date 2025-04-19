@@ -108,43 +108,5 @@ public final class Util {
 		}
 		return Arrays.copyOfRange(frame, offset + 2, offset + 2 + frameLen);
 	}
-	
-	/*public static String getCommandFromDatas(byte[] datas) {
-		String pn532Command = "";
-		if ( datas.length >0) {
-			if (datas[0] == (byte) 0xD5) {
-				byte command = (byte) (datas[1] -1);
-				switch (command) {
-                case PN532.COMMAND_SAMCONFIGURATION:
-                	pn532Command = "SAM configuration done";
-                    break;
-                case PN532.COMMAND_GETFIRMWAREVERSION:
-                	pn532Command = "firmware version";
-                    break;
-                case PN532.COMMAND_INLISTPASSIVETARGET:
-                	pn532Command = "passive target";
-                    break;
-                case PN532.COMMAND_GETGENERALSTATUS:
-                	pn532Command = "general status";
-                    break;
-                case PN532.COMMAND_SETPARAMETERS:
-                	pn532Command = "parameters set";
-                    break;
-                case PN532.COMMAND_INAUTOPOLL:
-                	pn532Command = "auto poll tag";
-                    break;
-                case PN532.COMMAND_RFREGULATIONTEST:
-                	pn532Command = "RF regulation test";
-                    break;
-                default:
-                	pn532Command = "command unknown";
-                    break;
-            }
-					
-			}
-		}
-		return pn532Command;
-	}*/
-	
 
 }

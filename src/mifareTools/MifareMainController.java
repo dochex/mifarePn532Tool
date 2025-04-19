@@ -354,19 +354,19 @@ HexEditor hexEditor;
 	private void waitForResponse(long timeout) {
 		data = new byte[0];
 		try {
-			Thread.sleep(timeout); // Ajouter un délai de 50ms
-		} catch (InterruptedException e) {
-		}
-		while (data.length == 0) {
-			int available = serialPort.bytesAvailable();
-			if (available > 0) {
-				byte[] read = new byte[available];
-				serialPort.readBytes(read, available);
-				// System.out.println(Util.getByteHexString(read) );
-				processReceivedData(read, available);
-				// System.out.println(Util.getByteHexString(data));
+			Thread.sleep(timeout); // Ajouter un délai de timeout ms
+			while (data.length == 0) {
+				int available = serialPort.bytesAvailable();
+				if (available > 0) {
+					byte[] read = new byte[available];
+					serialPort.readBytes(read, available);
+					// System.out.println(Util.getByteHexString(read) );
+					processReceivedData(read, available);
+					// System.out.println(Util.getByteHexString(data));
+				}
 			}
-		}
+		} catch (InterruptedException e) {
+		}	
 	}
 	
 	@FXML
@@ -382,15 +382,14 @@ HexEditor hexEditor;
 	}
 	
 	public void readWithKeys(byte[] keyA, byte[] keyB) {
-		System.out.println(Util.getByteHexString(keyA)); //Marion 484558414354  FD7B8FD8D1880400C842002000000017  //remy 8829DA9DAF76 
-		//textArea.appendText("Reading with default keys, waiting for response....\n"); Marion sector 14 : B0 05 93 C8 7C 89 F1 A1 F7 4E 9D 11 3F 7E FD FB
-		data = new byte[0];   //                                                                           9F BF 07 BB 44 ED 68 66 29 52 A4 11 C6 45 33 31
+		System.out.println(Util.getByteHexString(keyA));
+		data = new byte[0];   //                                                                           
 		boolean auth = false;
 		if (!Arrays.equals(uid, new byte[4])) {
 			for (int sector = 3; sector < 64; sector = sector + 4) {
-				auth = authenticateBlockKeyA((byte) (sector), uid, keyA);
+				auth = authenticateBlock((byte) (sector), uid, keyA, CMD_MIFARE_AUTH_A);
 				if (!auth) {
-					auth = authenticateBlockKeyB((byte) (sector), uid, keyB);
+					auth = authenticateBlock((byte) (sector), uid, keyB, CMD_MIFARE_AUTH_B);
 				}
 				if (auth) {
 					textArea.appendText("Authentication OK, reading sector " + (sector)/4 + "\n");
@@ -471,9 +470,9 @@ HexEditor hexEditor;
 					mapKeyB.put((int) (block), Arrays.copyOfRange(frame, 10, 16));
 					System.out.println("blockKeyA " + block + " : " + Util.getByteHexString( Arrays.copyOfRange(frame, 0, 6)));
 					System.out.println("blockKeyB " + block + " : " + Util.getByteHexString(Arrays.copyOfRange(frame, 10, 16)));
-					boolean auth = authenticateBlockKeyA((byte) (block), uid, authKeyA);
+					boolean auth = authenticateBlock((byte) (block), uid, authKeyA, CMD_MIFARE_AUTH_A);
 					if (!auth) {
-						auth = authenticateBlockKeyB((byte) (block), uid, authKeyB);
+						auth = authenticateBlock((byte) (block), uid, authKeyB, CMD_MIFARE_AUTH_B);
 					}
 					if (auth) {
 						textArea.appendText("Authentication OK, writing sector " + block + " with " + results.accessBits+ "\n");
@@ -494,9 +493,9 @@ HexEditor hexEditor;
 						 else 
 							blockTrailer = block + 4;
 					} else { // then authenticate with the keys extracted from the trailer
-						boolean auth = authenticateBlockKeyA((byte) (block), uid, mapKeyA.get(blockTrailer));
+						boolean auth = authenticateBlock((byte) (block), uid, mapKeyA.get(blockTrailer), CMD_MIFARE_AUTH_A);
 						if (!auth) {
-							auth = authenticateBlockKeyB((byte) (block), uid, mapKeyB.get(blockTrailer));
+							auth = authenticateBlock((byte) (block), uid, mapKeyB.get(blockTrailer), CMD_MIFARE_AUTH_B);
 						}
 						if (auth) { // third write block
 							int j = block * 16;
@@ -568,13 +567,13 @@ HexEditor hexEditor;
 		return builder.toString();
 	}
 	
-	private boolean authenticateBlockKeyB(byte block, byte[] uid, byte[] keyB) {
+	private boolean authenticateBlock(byte block, byte[] uid, byte[] key, byte cmd) {
 		boolean ret = false;
 		byte[] command = new byte[13];
 		command[0] =  0x01; // card 1
-        command[1] = CMD_MIFARE_AUTH_B; //0x61
+        command[1] = cmd;
         command[2] = block;
-		System.arraycopy(keyB, 0, command, 3, keyB.length);
+		System.arraycopy(key, 0, command, 3, key.length);
 		System.arraycopy(uid, 0, command, 9, uid.length);
 	    System.out.println("authCommand = " + Util.getByteHexString(command));
 	    callFunction(CMD_INDATAEXCHANGE, command);
@@ -582,39 +581,10 @@ HexEditor hexEditor;
 		if (data.length > 0) {
 			if (data[0] == 0x41) {
 				if (data[1] == 0x14) {
-					textArea.appendText("Sector " + block/4 + " :Authentication B failed \n");
-					//data = new byte[0];
+					textArea.appendText("Sector " + block/4 + " :Authentication " + cmd + " failed \n");
 					ret = false;
 				}
 				if (data[1] == 0x00) {
-					//data = new byte[0];
-					ret = true;
-				}
-			}
-		}
-		return ret;
-	}
-	
-	private boolean authenticateBlockKeyA(byte block, byte[] uid, byte[] keyA) {
-		boolean ret = false;
-		byte[] command = new byte[13];
-		command[0] =  0x01; // card 1
-        command[1] = CMD_MIFARE_AUTH_A; //0x60
-        command[2] = block;
-		System.arraycopy(keyA, 0, command, 3, keyA.length);
-		System.arraycopy(uid, 0, command, 9, uid.length);
-	    System.out.println("authCommand = " + Util.getByteHexString(command));
-	    callFunction(CMD_INDATAEXCHANGE, command);
-	    waitForResponse(50);			
-		if (data.length > 0) {
-			if (data[0] == 0x41) {
-				if (data[1] == 0x14) {
-					textArea.appendText("Sector " + block/4 + " :Authentication A failed  \n");
-					//data = new byte[0];
-					ret = false;
-				}
-				if (data[1] == 0x00) {
-					//data = new byte[0];
 					ret = true;
 				}
 			}
@@ -646,7 +616,7 @@ HexEditor hexEditor;
 	}
 	
 	private void writeToBlockWithAuth(byte block, byte[] keyA) {
-		if (authenticateBlockKeyA(block, uid, keyA)) {
+		if (authenticateBlock(block, uid, keyA, CMD_MIFARE_AUTH_A)) {
 			textArea.appendText("authenticate before writing : OK \n");
 			byte[] command = new byte[3 + 16];
 			command[0] = 0x01; // card 1

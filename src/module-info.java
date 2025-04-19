@@ -1,4 +1,3 @@
-
 module pn532 {
 
 	requires transitive com.fazecast.jSerialComm;

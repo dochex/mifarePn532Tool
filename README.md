@@ -45,8 +45,9 @@ We have two way to write :
  At the bottom there is another button who can test the access condition. Put the three bytes and click
  The program only decode. If you want to encode you can go to this webside : https://slebe.dev/mifarecalc/
 
- ***** Problem to resolve ****
+ ***** Nota Bene ****
 
- I didn't succeed to update the UI during long communications with the pn532 (I think it brake the timeout), so be patient when reading or writing before seeing the result.
+ I didn't succeed to update the UI during long communications with the pn532 (My trying brakes the timeout), but i ask Claude AI for a solution with SerialPortThreadFactory, and he give me a valid one after some modifications. So there is two versions of MifareMainController, one without concurrency 
+ (and you have to wait until the response appear in the textArea) and one with concurrency (and the textArea is updated during the communication). The first one is easier to understand the logic, so i let the two versions on the repository, just change the name in MifarMain.fxml..
 
  ![Optional Text](https://github.com/dochex/mifarePn532Tool/blob/main/documentation/program.PNG)
