@@ -78,8 +78,9 @@ HexEditor hexEditor;
 	private static final byte CMD_MIFARE_AUTH_B = 0x61; 
 	private static final byte CMD_MIFARE_AUTH_A = 0x60; 
 	private static final byte[] DEFAULT_KEY_B = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
-	// Clé A par défaut pour les cartes Mifare
 	private static final byte[] DEFAULT_KEY_A = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
+	private static final byte[] DEFAULT_CONDITIONS = {(byte) 0xFF, 0x07, (byte) 0x80, 0x00};
+	private static final byte[] DEFAULT_TRAILER = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, 0x07, (byte) 0x80, 0x00, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
 	private static byte LEN = 0, LCS = 0, TFI = 0, DCS = 0;
 	
 	// Packet handling state
@@ -119,6 +120,8 @@ HexEditor hexEditor;
 		currentDir = Path.of("").toAbsolutePath().toString();
 	}
 	private final static Object dataLock = new Object();
+	private final Map<Integer, String> writeConditions = new HashMap<>(); 
+	private final Map<Integer, byte[]> keyBMap = new HashMap<>(); 
 
 	public MifareMainController1() {}
 	
@@ -374,7 +377,7 @@ HexEditor hexEditor;
 
 	private void readSectorBlocks(int sectorIndex, int sectorEnd, Runnable onComplete) {
 	    // Calculate the starting block of this sector
-	    int startBlock = sectorEnd - 3;	    
+	    int startBlock = sectorEnd - 3;	
 	    // Debug message
 	    System.out.println("Starting to read blocks " + startBlock + " to " + sectorEnd + " for sector " + sectorIndex);
 	    Platform.runLater(() -> textArea.appendText("Reading blocks for sector " + sectorIndex + "...\n"));	    
@@ -476,6 +479,8 @@ HexEditor hexEditor;
 					for (int i = 0; i < accessConditions.length; i++) {
 						builder.append(accessConditions[i] + "\n");
 					}
+					keyBMap.put((int) blockNumber, Arrays.copyOfRange(data, 12, 18));
+					writeAccessMap(blockNumber, Arrays.copyOfRange(data, 9, 11));	
 				} catch (Exception e) {
 					builder.append("Error decoding access conditions: " + e.getMessage() + "\n");
 				}
@@ -485,6 +490,16 @@ HexEditor hexEditor;
 					String.format("Block " + blockNumber + ": Read failed with error code: 0x%02X\n", data[1] & 0xFF));
 		}
 		return builder.toString();
+	}
+	
+	public void writeAccessMap(byte blockNumber, byte[] bytesAccess) {
+		//System.out.println(Util.getByteHexString(bytesAccess));
+		boolean c1 = SectorTrailerUtil.getBitByPos(bytesAccess[0], 7);
+		boolean c2 = SectorTrailerUtil.getBitByPos(bytesAccess[1], 3);
+		boolean c3 = SectorTrailerUtil.getBitByPos(bytesAccess[1], 7);
+		String trailerAccess = SectorTrailerUtil.decodeTrailerAccess(c1, c2, c3);
+		//System.out.println(SectorTrailerUtil.isWritingKey(c1, c2, c3));
+		writeConditions.put((int) blockNumber, SectorTrailerUtil.isWritingKey(c1, c2, c3));
 	}
 	
 /****************************  Authentication  *********************************/
@@ -631,7 +646,58 @@ HexEditor hexEditor;
 	}
 	
 	@FXML
-	private void writeDump() {
+	private void writeNewTag() {
+	    FileChooser fileChooser = new FileChooser();
+	    fileChooser.setInitialDirectory(new File(currentDir + "/nfc-bin64/sauvegardes"));
+	    File selectedFile = fileChooser.showOpenDialog(null);
+	    if (selectedFile != null) {
+	        try {
+	            byte[] dumpData = Files.readAllBytes(selectedFile.toPath());
+	            // Start with first block and process sequentially
+	            writeNextBlock(dumpData, 0);
+	        } catch (IOException e) {
+	            e.printStackTrace();
+	            Platform.runLater(() -> textArea.appendText("Error reading dump file: " + e.getMessage() + "\n"));
+	        }
+	    }
+	}
+
+	private void writeNextBlock(byte[] dumpData, int blockNumber) {
+	    // Check if we've processed all blocks
+	    if (blockNumber >= 64) {
+	        Platform.runLater(() -> textArea.appendText("Card writing completed successfully!\n"));
+	        return;
+	    }	    
+	    int j = blockNumber * 16;
+	    // copy the block from the dump
+	    byte[] frame = Arrays.copyOfRange(dumpData, j, j + 16);
+	    if (blockNumber % 4 == 3) { // for trailer block change conditions
+	        System.arraycopy(DEFAULT_CONDITIONS, 0, frame, 6, 4);
+	    }	    
+	    authenticateBlock((byte) blockNumber, uid, DEFAULT_KEY_A, CMD_MIFARE_AUTH_A, authResult -> {
+	        if (authResult) {
+	            Platform.runLater(() -> textArea.appendText("Authentication OK for block " + blockNumber + "\n"));            
+	            writeToBlock(frame, (byte) blockNumber, writeResult -> {
+	                Platform.runLater(() -> textArea.appendText(writeResult));
+	                // Wait a moment before processing next block
+	                try {
+	                    Thread.sleep(200);
+	                } catch (InterruptedException e) {
+	                    e.printStackTrace();
+	                }
+	                // Process next block
+	                writeNextBlock(dumpData, blockNumber + 1);
+	            });
+	        } else {
+	            Platform.runLater(() -> textArea.appendText("Authentication failed for block " + blockNumber + "\n"));
+	            // Try next block anyway
+	            writeNextBlock(dumpData, blockNumber + 1);
+	        }
+	    });
+	}	
+	
+	@FXML
+	private void formatTag() {
 		FileChooser fileChooser = new FileChooser();
 		fileChooser.setInitialDirectory(new File(currentDir + "/nfc-bin64/sauvegardes"));
 		File selectedFile = fileChooser.showOpenDialog(null);
@@ -640,22 +706,19 @@ HexEditor hexEditor;
 				try {
 					byte[] dumpData = Files.readAllBytes(selectedFile.toPath());
 					Platform.runLater(() -> {
-						DumpDialog dialog = new DumpDialog();
-						Optional<Results> optionalResult = dialog.showAndWait();
-						optionalResult.ifPresent((Results results) -> {
-							byte[] accessBits = Util.decodeHexString(results.accessBits);
+						FormatDialog dialog = new FormatDialog();
+						Optional<mifareTools.FormatDialog.Results> optionalResult = dialog.showAndWait();
+						optionalResult.ifPresent((mifareTools.FormatDialog.Results results) -> {
+							if (results.authKeyA.isEmpty() || keyBMap == null) {
+								textArea.appendText("Please enter KeyA in the Format dialog , and read the Tag before trying to format, then restart Format dialog\n");
+								return;
+							}
 							byte[] authKeyA = Util.decodeHexString(results.authKeyA);
-							byte[] authKeyB = Util.decodeHexString(results.authKeyB);
 							SerialPortThreadFactory.submit(() -> {
 								try {
-									// Store keys from dump for second pass
-									Map<Integer, byte[]> mapKeyA = new HashMap<>();
-									Map<Integer, byte[]> mapKeyB = new HashMap<>();
-									// First pass: Write trailer blocks with keys
-									writeDumpTrailers(dumpData, authKeyA, authKeyB, accessBits, mapKeyA, mapKeyB,
+									writeAllTrailers(dumpData, authKeyA,
 											() -> {
-												// Second pass: Write data blocks
-												writeDumpDataBlocks(dumpData, mapKeyA, mapKeyB);
+												Platform.runLater(() -> textArea.appendText("Formatting trailer blocks ended\n"));
 											});
 								} catch (Exception e) {
 									e.printStackTrace();
@@ -671,68 +734,68 @@ HexEditor hexEditor;
 				}
 			});
 		}
-	}
-
-	private void writeDumpTrailers(byte[] dumpData, byte[] authKeyA, byte[] authKeyB, byte[] accessBits,
-	                              Map<Integer, byte[]> mapKeyA, Map<Integer, byte[]> mapKeyB, Runnable onComplete) {
-	    writeDumpTrailerBlock(0, dumpData, authKeyA, authKeyB, accessBits, mapKeyA, mapKeyB, onComplete);
-	}
-
-	private void writeDumpTrailerBlock(int blockIndex, byte[] dumpData, byte[] authKeyA, byte[] authKeyB, byte[] accessBits,
-	                                  Map<Integer, byte[]> mapKeyA, Map<Integer, byte[]> mapKeyB, Runnable onComplete) {
-	    // Only process sector trailer blocks (block % 4 == 3)
-	    if (blockIndex >= 64) {
-	        // All sectors processed, run completion callback
-	        if (onComplete != null) {
-	            onComplete.run();
-	        }
-	        return;
-	    }	    
-	    if (blockIndex % 4 == 3) {
-	        int j = blockIndex * 16;
-	        byte[] frame = Arrays.copyOfRange(dumpData, j, j + 16);	        
-	        // Extract and store keys from the dump
-	        mapKeyA.put(blockIndex, Arrays.copyOfRange(frame, 0, 6));
-	        mapKeyB.put(blockIndex, Arrays.copyOfRange(frame, 10, 16));	        
-	        System.out.println("blockKeyA " + blockIndex + " : " + Util.getByteHexString(Arrays.copyOfRange(frame, 0, 6)));
-	        System.out.println("blockKeyB " + blockIndex + " : " + Util.getByteHexString(Arrays.copyOfRange(frame, 10, 16)));	        
-	        // Authenticate with provided keys
-	        authenticateBlock((byte)blockIndex, uid, authKeyA, CMD_MIFARE_AUTH_A, authResult -> {
-	            if (authResult) {
-	                // Authentication with Key A successful
-	                writeTrailerBlock(blockIndex, frame, accessBits, () -> {
-	                    // Continue with next block
-	                    writeDumpTrailerBlock(blockIndex + 1, dumpData, authKeyA, authKeyB, accessBits, mapKeyA, mapKeyB, onComplete);
-	                });
-	            } else {
-	                // Try authenticate with Key B
-	                authenticateBlock((byte)blockIndex, uid, authKeyB, CMD_MIFARE_AUTH_B, authBResult -> {
-	                    if (authBResult) {
-	                        // Authentication with Key B successful
-	                        writeTrailerBlock(blockIndex, frame, accessBits, () -> {
-	                            // Continue with next block
-	                            writeDumpTrailerBlock(blockIndex + 1, dumpData, authKeyA, authKeyB, accessBits, mapKeyA, mapKeyB, onComplete);
-	                        });
-	                    } else {
-	                        // Authentication failed with both keys
-	                        Platform.runLater(() -> textArea.appendText("Authentication failed for trailer block " + blockIndex + "\n"));
-	                        // Skip this block and continue
-	                        writeDumpTrailerBlock(blockIndex + 1, dumpData, authKeyA, authKeyB, accessBits, mapKeyA, mapKeyB, onComplete);
-	                    }
-	                });
-	            }
-	        });
-	    } else {
-	        // Not a trailer block, skip to next block
-	        writeDumpTrailerBlock(blockIndex + 1, dumpData, authKeyA, authKeyB, accessBits, mapKeyA, mapKeyB, onComplete);
-	    }
+					
 	}
 	
-	private void writeTrailerBlock(int block, byte[] frame, byte[] accessBits, Runnable onComplete) {
-	    // Copy access bits to the frame
-	    System.arraycopy(accessBits, 0, frame, 6, 4);	    
-	    // Write trailer block
-	    writeToBlock(frame, (byte)block, result -> {
+	private void writeAllTrailers(byte[] dumpData, byte[] authKeyA, Runnable onComplete) {
+		 authAndWriteTrailer(0, dumpData, authKeyA, onComplete);
+	}
+	
+	private void authAndWriteTrailer(int blockIndex, byte[] dumpData, byte[] authKeyA, Runnable onComplete) {
+		// Only process sector trailer blocks (block % 4 == 3)
+		if (blockIndex >= 64) {
+			// All sectors processed, run completion callback
+			if (onComplete != null) {
+				onComplete.run();
+			}
+			return;
+		}
+		if (blockIndex % 4 == 3) {
+			int j = blockIndex * 16;
+			byte[] frame = Arrays.copyOfRange(dumpData, j, j + 16);
+			byte[]keyB = keyBMap.get(blockIndex);
+			// Authenticate with provided keys
+			System.out.println(writeConditions.get(blockIndex));
+			if (writeConditions.get(blockIndex).equals("")) {
+				textArea.appendText("Write forbidden for block " + blockIndex + "\n");
+				authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+			} else if (writeConditions.get(blockIndex).equals("KeyA")) {
+				authenticateBlock((byte) blockIndex, uid, authKeyA, CMD_MIFARE_AUTH_A, authResult -> {
+					if (authResult) {
+						// Authentication with Key A successful
+						formatTrailerBlock(blockIndex, () -> {
+							// Continue with next block
+							authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+						});
+					} else {
+						Platform.runLater(() -> textArea.appendText("Authentication failed for trailer block " + blockIndex + "\n"));
+						// Skip this block and continue
+						authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+					}
+				});
+			} else if (writeConditions.get(blockIndex).equals("KeyB")) {
+				authenticateBlock((byte) blockIndex, uid, keyB, CMD_MIFARE_AUTH_B, authBResult -> {
+					if (authBResult) {
+						// Authentication with Key B successful
+						formatTrailerBlock(blockIndex, () -> {
+							// Continue with next block
+							authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+						});
+					} else {
+						Platform.runLater(() -> textArea.appendText("Authentication failed for trailer block " + blockIndex + "\n"));
+						// Skip this block and continue
+						authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+					}
+				});
+			}
+		} else {
+			//System.out.println("Not a trailer block, skip to next block");
+			authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+		}
+	}
+	
+	private void formatTrailerBlock(int block, Runnable onComplete) {
+	    writeToBlock(DEFAULT_TRAILER, (byte)block, result -> {
 	        Platform.runLater(() -> textArea.appendText(result));
 	        // Continue with next operation
 	        if (onComplete != null) {
@@ -741,63 +804,6 @@ HexEditor hexEditor;
 	    });
 	}
 
-	private void writeDumpDataBlocks(byte[] dumpData, Map<Integer, byte[]> mapKeyA, Map<Integer, byte[]> mapKeyB) {
-	    writeDumpDataBlock(0, dumpData, mapKeyA, mapKeyB);
-	}
-
-	private void writeDumpDataBlock(int blockIndex, byte[] dumpData, Map<Integer, byte[]> mapKeyA, Map<Integer, byte[]> mapKeyB) {
-	    if (blockIndex >= 64) {
-	        // All blocks processed
-	        Platform.runLater(() -> textArea.appendText("Dump write complete!\n"));
-	        return;
-	    }    
-	    // Skip trailer blocks, they were already written
-	    if (blockIndex % 4 == 3) {
-	        // Skip trailer blocks, move to next block
-	        writeDumpDataBlock(blockIndex + 1, dumpData, mapKeyA, mapKeyB);
-	        return;
-	    }	    
-	    // Determine which trailer block contains the keys for this block
-	    int blockTrailer = ((blockIndex / 4) * 4) + 3;	    
-	    // Try to authenticate with Key A from the trailer
-	    authenticateBlock((byte)blockIndex, uid, mapKeyA.get(blockTrailer), CMD_MIFARE_AUTH_A, authResult -> {
-	        if (authResult) {
-	            // Authentication with Key A successful
-	            writeDataBlock(blockIndex, dumpData, () -> {
-	                // Continue with next block
-	                writeDumpDataBlock(blockIndex + 1, dumpData, mapKeyA, mapKeyB);
-	            });
-	        } else {
-	            // Try authenticate with Key B
-	            authenticateBlock((byte)blockIndex, uid, mapKeyB.get(blockTrailer), CMD_MIFARE_AUTH_B, authBResult -> {
-	                if (authBResult) {
-	                    // Authentication with Key B successful
-	                    writeDataBlock(blockIndex, dumpData, () -> {
-	                        // Continue with next block
-	                        writeDumpDataBlock(blockIndex + 1, dumpData, mapKeyA, mapKeyB);
-	                    });
-	                } else {
-	                    // Authentication failed with both keys
-	                    Platform.runLater(() -> textArea.appendText("Authentication failed for data block " + blockIndex + "\n"));
-	                    // Skip this block and continue
-	                    writeDumpDataBlock(blockIndex + 1, dumpData, mapKeyA, mapKeyB);
-	                }
-	            });
-	        }
-	    });
-	}
-
-	private void writeDataBlock(int block, byte[] dumpData, Runnable onComplete) {
-	    int offset = block * 16;
-	    byte[] dataToWrite = Arrays.copyOfRange(dumpData, offset, offset + 16);	    
-	    writeToBlock(dataToWrite, (byte)block, result -> {
-	        Platform.runLater(() -> textArea.appendText(result));
-	        // Continue with next operation
-	        if (onComplete != null) {
-	            onComplete.run();
-	        }
-	    });
-	}
 	
 	/****************************  Utility  ******************************************/
 	

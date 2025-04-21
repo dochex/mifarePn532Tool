@@ -25,29 +25,28 @@ NB: The KeyA cannot never be reading with the access conditions, so when we read
 
 ***** Writing to the Tag ****
 
-Before writing, it is important to know the access conditions of the sector in which we want to write. We have to kow the key who can read or not the blocks of the sector.
-So for a new tag it is the default keys but for the other it is necessary to read the tag and verify the access conditions.
 We have two way to write :
 - we want to write one block at a time : we can do it with the button 'Write to Block' at the bottom. Before we must enter the 16 bytes of the block, the number of the block and the good key.
-- we want to clone an entire dump to a tag: click on the button 'Write a dump' and look at the dialog box
-    + The best way is to change first the access condition and put them for each sector to the default (FF0780) which are
+- we want to clone an entire dump to a tag: click on the button 'Write a dump on a new Tag' and look at the dialog box.
+    + The dump must have been created with mfoc, because it writes the keys to the trailer block 
+    + The program will copy the dump and will change the access condition by putting them for each sector to the default (FF0780) which are
         * Block 0: R:A|B W:A|B I:A|B D:A|B
         * Block 1: R:A|B W:A|B I:A|B D:A|B       //      for the blocks, Key A and B can write
         * Block 2: R:A|B W:A|B I:A|B D:A|B
         * Trailer: KeyA (R:- W:A) Access bits (R:A W:A) KeyB (R:A W:A)  //  for the block4 or trailer only KeyA can write
-    + the program do it in two pass : first create the trailer of each sector with the keys of the dump and the access conditions choosen and write them with the keys of the tag
-    + in a second pass it will write the block (less the trailers) with the keys who have been written on the tag
-    + if it is a new tag the default key must be use for the first pass
-    + if it is a tag that has already been written, we must have found the keys and put them in the dialog box
+    + It's permits you to change later the access conditions as you want by writing one block at a time.
+
+
+If we have an already written card and we want to format it, we can use the button 'Format a Tag'. 
+We have to know the KeyA of the tag and we have to read the tag before format, it will search and map the KeysB and the write conditions.
+It will write the default keys on the trailer blocks and the default access conditions, and then we can in a second time use the button 'Write a dump on a new Tag' to write the dump 'format.mfd' in 'nfc-64/sauvegardes'.
+
  
 ***** Testing access conditions ****
 
  At the bottom there is another button who can test the access condition. Put the three bytes and click
  The program only decode. If you want to encode you can go to this webside : https://slebe.dev/mifarecalc/
 
- ***** Nota Bene ****
-
- I didn't succeed to update the UI during long communications with the pn532 (My trying brakes the timeout), but i ask Claude AI for a solution with SerialPortThreadFactory, and he give me a valid one after some modifications. So there is two versions of MifareMainController, one without concurrency 
- (and you have to wait until the response appear in the textArea) and one with concurrency (and the textArea is updated during the communication). The first one is easier to understand the logic, so i let the two versions on the repository, just change the name in MifarMain.fxml..
-
+ 
+ 
  ![Optional Text](https://github.com/dochex/mifarePn532Tool/blob/main/documentation/program.PNG)
