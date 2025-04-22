@@ -35,7 +35,8 @@
             <Button mnemonicParsing="false" onAction="#mfcuk" text="mfcuk" />
             <Button mnemonicParsing="false" onAction="#saveDump" text="Save the dump" />
             <Button mnemonicParsing="false" onAction="#openDump" text="Open a dump" />
-            <Button mnemonicParsing="false" onAction="#writeDump" text="Write all blocks to The Tag" />
+            <Button mnemonicParsing="false" onAction="#writeNewTag" text="Write a dump on new Tag" />
+            <Button mnemonicParsing="false" onAction="#formatTag" text="Format a Tag" />
 			</children>
 		</HBox>
 	</top>

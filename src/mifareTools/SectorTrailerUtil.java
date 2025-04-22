@@ -65,7 +65,7 @@ public class SectorTrailerUtil {
 		return "Unknown";
 	}
 
-	private static String decodeTrailerAccess(boolean c1, boolean c2, boolean c3) {
+	public static String decodeTrailerAccess(boolean c1, boolean c2, boolean c3) {
 		if (!c1 && !c2 && !c3)
 			return "KeyA (R:- W:A) Access bits (R:A W:-) KeyB (R:A W:A)"; // 000
 		if (!c1 && c2 && !c3)
@@ -84,6 +84,18 @@ public class SectorTrailerUtil {
 			return "KeyA (R:- W:-) Access bits (R:A|B W:-) KeyB (R:- W:-)"; // 111
 
 		return "Unknown";
+	}
+	
+	public static String isWritingKey(boolean c1, boolean c2, boolean c3) {
+		if (!c1 && !c2 && !c3 || !c1 && c2 && !c3 || c1 && !c2 && !c3 || c1 && c2 && !c3 || c1 && c2 && c3)
+			return ""; 
+		if (!c1 && !c2 && c3)
+			return "KeyA"; // 001 - Transport configuration
+		if (!c1 && c2 && c3)
+			return "KeyB"; // 011
+		if (c1 && !c2 && c3)
+			return "KeyB"; // 101
+		return "";
 	}
 
 	/**

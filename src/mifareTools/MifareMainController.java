@@ -76,8 +76,8 @@ HexEditor hexEditor;
 	private static final byte CMD_MIFARE_AUTH_B = 0x61; 
 	private static final byte CMD_MIFARE_AUTH_A = 0x60; 
 	private static final byte[] DEFAULT_KEY_B = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
-	// Clé A par défaut pour les cartes Mifare
 	private static final byte[] DEFAULT_KEY_A = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
+	private static final byte[] DEFAULT_CONDITIONS = {(byte) 0xFF, 0x07, (byte) 0x80, 0x00};
 	private static byte LEN = 0, LCS = 0, TFI = 0, DCS = 0;
 	
 	// Packet handling state
@@ -100,6 +100,8 @@ HexEditor hexEditor;
 	// Helper maps for decoding responses
 	private static final Map<Integer, String> BITRATES = new HashMap<>();
 	private static final Map<Integer, String> MODULATION_TYPES = new HashMap<>();
+	
+	private static final Map<Integer, String> writeConditions = new HashMap<>(); 
 
 	static {
 		// Initialize bitrates map
@@ -381,6 +383,89 @@ HexEditor hexEditor;
 		readWithKeys(Util.decodeHexString(keyA), Util.decodeHexString(keyB));
 	}
 	
+	private void readMifareBlock(byte blockNumber) {
+		byte[] command = new byte[3];
+		command[0] = 0x01; // card 1
+		command[1] = CMD_MIFAREREAD; // 0x30
+		command[2] = blockNumber;
+		// System.out.println("readCommand = " + Util.getByteHexString(command));
+		callFunction(CMD_INDATAEXCHANGE, command);
+		data = new byte[0];
+		try {
+			Thread.sleep(50); // Ajouter un délai de 50ms
+		} catch (InterruptedException e) {
+		}
+		while (data.length == 0) {
+			int available = serialPort.bytesAvailable();
+			if (available > 0) {
+				byte[] read = new byte[available];
+				serialPort.readBytes(read, available);
+				// System.out.println(Util.getByteHexString(read) );
+				processReceivedData(read, available);
+				//System.out.println(Util.getByteHexString(data));
+				textArea.appendText(processReadResponse(blockNumber));
+			}
+		}
+	}
+	
+	private String processReadResponse(byte blockNumber) {
+		StringBuilder builder = new StringBuilder();
+		// System.out.println("Read response received: " + Util.getByteHexString(buffin));
+		if (data[1] == 0x00) {
+			builder.append("Block " + blockNumber + " : ");
+			
+			// System.out.printf("Block " + blockNumber + " : ");
+			// Afficher les données du bloc (16 octets pour Mifare Classic)
+			for (int i = 0; i < 16; i++) {
+				builder.append(String.format("%02X", data[i + 2] & 0xFF));
+				savingBuffer[i + blockNumber*16] = (byte) (data[i + 2] & 0xFF);
+				// System.out.printf("%02X ", data[i + 2] & 0xFF);
+				builder.append(" ");
+				// System.out.print(" ");
+			}
+			builder.append("\n");
+			System.out.println();
+			if (blockNumber % 4 == 3) {
+				String[] accessConditions = SectorTrailerUtil.decodeAccessConditions(Arrays.copyOfRange(data, 2, 18)) ;
+				for (int i = 0; i < 4; i++) {
+					builder.append(accessConditions[i] + "\n");
+				}
+				setWriteMap(blockNumber, Arrays.copyOfRange(data, 9, 11));			
+			}
+		} else {
+			return String.format("Read failed with error code: 0x%02X\n", data[1] & 0xFF);
+		}
+		return builder.toString();
+	}
+	
+	public void setWriteMap(byte blockNumber, byte[] bytesAccess) {
+		//System.out.println(Util.getByteHexString(bytesAccess));
+		boolean c1 = SectorTrailerUtil.getBitByPos(bytesAccess[0], 7);
+		boolean c2 = SectorTrailerUtil.getBitByPos(bytesAccess[1], 3);
+		boolean c3 = SectorTrailerUtil.getBitByPos(bytesAccess[1], 7);
+		String trailerAccess = SectorTrailerUtil.decodeTrailerAccess(c1, c2, c3);
+		//System.out.println(SectorTrailerUtil.isWritingKey(c1, c2, c3));
+		writeConditions.put((int) blockNumber, SectorTrailerUtil.isWritingKey(c1, c2, c3));
+	}
+	
+	public void readTrailers(byte[]keyA, byte[] keyB) {
+		System.out.println(Util.getByteHexString(keyA));
+		data = new byte[0];   //                                                                           
+		boolean auth = false;
+		if (!Arrays.equals(uid, new byte[4])) {
+			for (int sector = 3; sector < 64; sector = sector + 4) {
+				auth = authenticateBlock((byte) (sector), uid, keyA, CMD_MIFARE_AUTH_A);
+				if (!auth) {
+					auth = authenticateBlock((byte) (sector), uid, keyB, CMD_MIFARE_AUTH_B);
+				}
+				if (auth) {
+					textArea.appendText("Authentication OK, reading trailer of sector " + (sector)/4 + "\n");
+					readMifareBlock((byte) (sector));
+				}
+			}
+		}
+	}
+	
 	public void readWithKeys(byte[] keyA, byte[] keyB) {
 		System.out.println(Util.getByteHexString(keyA));
 		data = new byte[0];   //                                                                           
@@ -446,9 +531,35 @@ HexEditor hexEditor;
 		hexEditor.setData(selectedFile);
 	}
 	
+	@FXML
+	private void writeNewTag() {
+		FileChooser fileChooser = new FileChooser();
+		fileChooser.setInitialDirectory(new File(currentDir + "/nfc-bin64/sauvegardes"));
+		File selectedFile = fileChooser.showOpenDialog(null);
+		try {
+			byte[] dumpData = Files.readAllBytes(selectedFile.toPath());
+			for (int block = 0; block < 64; block++) {
+				int j = block * 16;
+				// copy the block from the dump
+				byte[] frame = Arrays.copyOfRange(dumpData, j, j + 16);
+				if (block % 4 == 3) { // for trailer block change conditions
+					System.arraycopy(DEFAULT_CONDITIONS, 0, frame, 6, 4);
+				}
+				boolean auth = authenticateBlock((byte) (block), uid, DEFAULT_KEY_A, CMD_MIFARE_AUTH_A);
+				if (!auth) {
+					textArea.appendText("Authentication failed, block " + block + "\n");
+				} else {
+					writeToBlock(frame, (byte) (block));
+					textArea.appendText("Writing Block " + block + " " + Util.getByteHexString(frame) + "\n ");
+				}
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
 	
 	@FXML
-	private void writeDump() {
+	private void writeOldTag() {
 		FileChooser fileChooser = new FileChooser();
 		fileChooser.setInitialDirectory(new File(currentDir + "/nfc-bin64/sauvegardes"));
 		File selectedFile = fileChooser.showOpenDialog(null);
@@ -468,19 +579,28 @@ HexEditor hexEditor;
 					byte[] frame = Arrays.copyOfRange(dumpData, j, j + 16);
 					mapKeyA.put((int) (block),  Arrays.copyOfRange(frame, 0, 6));
 					mapKeyB.put((int) (block), Arrays.copyOfRange(frame, 10, 16));
-					System.out.println("blockKeyA " + block + " : " + Util.getByteHexString( Arrays.copyOfRange(frame, 0, 6)));
-					System.out.println("blockKeyB " + block + " : " + Util.getByteHexString(Arrays.copyOfRange(frame, 10, 16)));
-					boolean auth = authenticateBlock((byte) (block), uid, authKeyA, CMD_MIFARE_AUTH_A);
-					if (!auth) {
-						auth = authenticateBlock((byte) (block), uid, authKeyB, CMD_MIFARE_AUTH_B);
-					}
-					if (auth) {
-						textArea.appendText("Authentication OK, writing sector " + block + " with " + results.accessBits+ "\n");
-						System.arraycopy(accessBits, 0, frame, 6, 4);
-						writeToBlock(frame, (byte) (block));
-					}else {
-						textArea.appendText("Authentication failed, block " + block + "\n");
-					}
+					//System.out.println("blockKeyA " + block + " : " + Util.getByteHexString( Arrays.copyOfRange(frame, 0, 6)));
+					//System.out.println("blockKeyB " + block + " : " + Util.getByteHexString(Arrays.copyOfRange(frame, 10, 16)));
+					if (writeConditions.get(block).equals("")) {
+						textArea.appendText("No access conditions for block " + block + "\n");
+						return;
+					}else if (writeConditions.get(block).equals("KeyA")) {
+						boolean auth = authenticateBlock((byte) (block), uid, authKeyA, CMD_MIFARE_AUTH_A);
+						if (auth) {
+							System.arraycopy(accessBits, 0, frame, 6, 4);
+							writeToBlock(frame, (byte) (block));
+						}else {
+							textArea.appendText("Authentication A failed, block " + block + "\n");
+						}
+					} else {
+						boolean auth = authenticateBlock((byte) (block), uid, authKeyB, CMD_MIFARE_AUTH_B);
+						if (auth) {
+							System.arraycopy(accessBits, 0, frame, 6, 4);
+							writeToBlock(frame, (byte) (block));
+						}else {
+							textArea.appendText("Authentication B failed, block " + block + "\n");
+						}
+					}					
 				}
 				// The keys of the tag are now those of the dump
 				// second pass : write others block after extracting Keys from their trailer sector
@@ -514,58 +634,7 @@ HexEditor hexEditor;
 		}
 	}
 		
-	private void readMifareBlock(byte blockNumber) {
-		byte[] command = new byte[3];
-		command[0] = 0x01; // card 1
-		command[1] = CMD_MIFAREREAD; // 0x30
-		command[2] = blockNumber;
-		// System.out.println("readCommand = " + Util.getByteHexString(command));
-		callFunction(CMD_INDATAEXCHANGE, command);
-		data = new byte[0];
-		try {
-			Thread.sleep(50); // Ajouter un délai de 50ms
-		} catch (InterruptedException e) {
-		}
-		while (data.length == 0) {
-			int available = serialPort.bytesAvailable();
-			if (available > 0) {
-				byte[] read = new byte[available];
-				serialPort.readBytes(read, available);
-				// System.out.println(Util.getByteHexString(read) );
-				processReceivedData(read, available);
-				//System.out.println(Util.getByteHexString(data));
-				textArea.appendText(processReadResponse(blockNumber));
-			}
-		}
-	}
-	
-	private String processReadResponse(byte blockNumber) {
-		StringBuilder builder = new StringBuilder();
-		// System.out.println("Read response received: " + Util.getByteHexString(buffin));
-		if (data[1] == 0x00) {
-			builder.append("Block " + blockNumber + " : ");
-			// System.out.printf("Block " + blockNumber + " : ");
-			// Afficher les données du bloc (16 octets pour Mifare Classic)
-			for (int i = 0; i < 16; i++) {
-				builder.append(String.format("%02X", data[i + 2] & 0xFF));
-				savingBuffer[i + blockNumber*16] = (byte) (data[i + 2] & 0xFF);
-				// System.out.printf("%02X ", data[i + 2] & 0xFF);
-				builder.append(" ");
-				// System.out.print(" ");
-			}
-			builder.append("\n");
-			System.out.println();
-			if (blockNumber % 4 == 3) {
-				String[] accessConditions = SectorTrailerUtil.decodeAccessConditions(Arrays.copyOfRange(data, 2, 18)) ;
-				for (int i = 0; i < 4; i++) {
-					builder.append(accessConditions[i] + "\n");
-				}
-			}
-		} else {
-			return String.format("Read failed with error code: 0x%02X\n", data[1] & 0xFF);
-		}
-		return builder.toString();
-	}
+
 	
 	private boolean authenticateBlock(byte block, byte[] uid, byte[] key, byte cmd) {
 		boolean ret = false;
