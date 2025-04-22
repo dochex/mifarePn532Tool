@@ -49,6 +49,6 @@ It will write the default keys on the trailer blocks and the default access cond
 
 ***** Nota bene ******
 
-There is two version of MifareMainController. I let the one without concurrency because it is easier for understandic the logic
+There is two version of MifareMainController. I let the one without concurrency because it is easier for understanding the logic
  
  ![Optional Text](https://github.com/dochex/mifarePn532Tool/blob/main/documentation/program.PNG)
