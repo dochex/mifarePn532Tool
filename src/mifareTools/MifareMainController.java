@@ -32,7 +32,6 @@ import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.stage.FileChooser;
-import mifareTools.DumpDialog.Results;
 
 public class MifareMainController {
 
@@ -78,6 +77,7 @@ HexEditor hexEditor;
 	private static final byte[] DEFAULT_KEY_B = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
 	private static final byte[] DEFAULT_KEY_A = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
 	private static final byte[] DEFAULT_CONDITIONS = {(byte) 0xFF, 0x07, (byte) 0x80, 0x00};
+	private static final byte[] DEFAULT_TRAILER = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, 0x07, (byte) 0x80, 0x00, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
 	private static byte LEN = 0, LCS = 0, TFI = 0, DCS = 0;
 	
 	// Packet handling state
@@ -102,6 +102,7 @@ HexEditor hexEditor;
 	private static final Map<Integer, String> MODULATION_TYPES = new HashMap<>();
 	
 	private static final Map<Integer, String> writeConditions = new HashMap<>(); 
+	private final Map<Integer, byte[]> keyBMap = new HashMap<>(); 
 
 	static {
 		// Initialize bitrates map
@@ -139,10 +140,10 @@ HexEditor hexEditor;
 		sKeyB.setTextFormatter(new TextFormatter<String>(change -> change.getControlNewText().matches("^[0-9A-F]{0,12}$") ? change : null));
 		tfBlock.setTextFormatter(new TextFormatter<String>(change -> change.getControlNewText().matches("^[0-9]{0,2}$") ? change : null));
 		tfAccessBits.setTextFormatter(new TextFormatter<String>(change -> change.getControlNewText().matches("^[0-9A-F]{0,6}$") ? change : null));
-		final MenuItem item1 = new MenuItem("Sauvegarder les modifications");
+		tfKeyForWriting.setTextFormatter(new TextFormatter<String>(change -> change.getControlNewText().matches("^[0-9A-F]{0,12}$") ? change : null));
+		final MenuItem item1 = new MenuItem("Save the changes");
 		item1.setOnAction(new EventHandler<ActionEvent>() {
 		    public void handle(ActionEvent e) {
-		        System.out.println("Sauvegarde les modifications");
 		        saveModifiedDump();
 		    }
 		});
@@ -173,6 +174,8 @@ HexEditor hexEditor;
 		serialPort.setFlowControl(SerialPort.FLOW_CONTROL_DISABLED);
 		serialPort.setComPortTimeouts(SerialPort.TIMEOUT_READ_BLOCKING, 50, 50);
 	}
+	
+	/**********************  Processing response  *********************************/
 	
 	private static boolean processReceivedData(byte[] frame, int dataLength) {
 		boolean ackFrame = false;
@@ -281,78 +284,6 @@ HexEditor hexEditor;
 		return ackFrame;
 	}
 	
-	@FXML
-	public void mfcuk() {
-		textArea.appendText("Searching a key with mfcuk, waiting for response....\n");
-		serialPort.closePort();
-		serialPort.closePort();
-		Thread thread =new Thread(() -> {
-                ProcessBuilder processBuilder = new ProcessBuilder();
-                String basePath = currentDir + "/nfc-bin64/";
-                processBuilder.directory(new File(basePath));
-                processBuilder.command(basePath + "mfcuk.exe", "-C", "-R", "0:A", "-s 250", "-S 250", "-v 2");
-                try {
-                    Process process = processBuilder.start();
-                    InputStream inputStream = process.getInputStream();
-                    InputStream errorStream = process.getErrorStream();
-                    printStream(inputStream);
-                    printStream(errorStream);
-                    process.waitFor();
-                } catch (IOException | InterruptedException e) {
-                    e.printStackTrace();
-                }
-		});
-        thread.setDaemon(true);
-        thread.start();
-	}
-	
-	@FXML
-	public void searchKeys() {
-		String keysFile = (String) choiceSearchKeys.getSelectionModel().getSelectedItem();
-		textArea.appendText("Searching keys, waiting for response....\n");
-		serialPort.closePort();
-		Thread thread =new Thread(() -> {
-                ProcessBuilder processBuilder = new ProcessBuilder();
-                String basePath = currentDir + "/nfc-bin64/";
-                processBuilder.directory(new File(basePath));
-                processBuilder.command(basePath + "mfoc-hardnested.exe", "-f", basePath + keysFile, "-O", basePath + "sauvegardes/saved.mfd");
-                try {
-                    Process process = processBuilder.start();
-                    InputStream inputStream = process.getInputStream();
-                    InputStream errorStream = process.getErrorStream();
-                    printStream(inputStream);
-                    printStream(errorStream);
-                    process.waitFor();
-                } catch (IOException | InterruptedException e) {
-                    e.printStackTrace();
-                }
-	
-		});
-        thread.setDaemon(true);
-        thread.start();
-	}
-	
-	private void printStream(InputStream inputStream) {
-		try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream))) {
-			 String line;
-		        while ((line = bufferedReader.readLine()) != null) {
-		            final String finalLine = line; // Declare as final
-		            if (finalLine.endsWith("[................]")) {
-		            	int i = 0;
-		            	 Platform.runLater(() -> textArea.appendText("."));
-							if (i > 100) {
-								Platform.runLater(() -> textArea.appendText("\n"));
-								i = 0;
-							}
-		            } else {
-		                Platform.runLater(() -> textArea.appendText(finalLine + "\n"));
-		            }
-		        }
-		} catch (IOException e1) {
-			e1.printStackTrace();
-		}
-	}
-	
 	private void waitForResponse(long timeout) {
 		data = new byte[0];
 		try {
@@ -370,6 +301,8 @@ HexEditor hexEditor;
 		} catch (InterruptedException e) {
 		}	
 	}
+	
+	/*****************************  READING  *********************************/
 	
 	@FXML
 	public void readWithDefaultKeys() {
@@ -430,6 +363,7 @@ HexEditor hexEditor;
 				for (int i = 0; i < 4; i++) {
 					builder.append(accessConditions[i] + "\n");
 				}
+				keyBMap.put((int) blockNumber, Arrays.copyOfRange(data, 12, 18));
 				setWriteMap(blockNumber, Arrays.copyOfRange(data, 9, 11));			
 			}
 		} else {
@@ -439,12 +373,9 @@ HexEditor hexEditor;
 	}
 	
 	public void setWriteMap(byte blockNumber, byte[] bytesAccess) {
-		//System.out.println(Util.getByteHexString(bytesAccess));
 		boolean c1 = SectorTrailerUtil.getBitByPos(bytesAccess[0], 7);
 		boolean c2 = SectorTrailerUtil.getBitByPos(bytesAccess[1], 3);
 		boolean c3 = SectorTrailerUtil.getBitByPos(bytesAccess[1], 7);
-		String trailerAccess = SectorTrailerUtil.decodeTrailerAccess(c1, c2, c3);
-		//System.out.println(SectorTrailerUtil.isWritingKey(c1, c2, c3));
 		writeConditions.put((int) blockNumber, SectorTrailerUtil.isWritingKey(c1, c2, c3));
 	}
 	
@@ -486,50 +417,34 @@ HexEditor hexEditor;
 		}
     }
 	
-	public void saveModifiedDump() {
-		String classChanged = hexEditor.getContent();
-		try {
-			File saved = new File(currentDir +"/nfc-bin64/sauvegardes/modified.mfd");
-			byte[] data = Util.decodeHexString(classChanged);
-			FileOutputStream destFile = new FileOutputStream(saved);
-			try {
-				ByteArrayInputStream dataBytes = new ByteArrayInputStream(data);
-				try {
-					byte buffer[] = new byte[1024];
-					int n;
-					while ((n = dataBytes.read(buffer)) != -1) {
-						destFile.write(buffer, 0, n);
-					}
-				} finally {
-					dataBytes.close();
+	/****************************  Authentication  *********************************/
+	
+	private boolean authenticateBlock(byte block, byte[] uid, byte[] key, byte cmd) {
+		boolean ret = false;
+		byte[] command = new byte[13];
+		command[0] =  0x01; // card 1
+        command[1] = cmd;
+        command[2] = block;
+		System.arraycopy(key, 0, command, 3, key.length);
+		System.arraycopy(uid, 0, command, 9, uid.length);
+	    System.out.println("authCommand = " + Util.getByteHexString(command));
+	    callFunction(CMD_INDATAEXCHANGE, command);
+	    waitForResponse(50);			
+		if (data.length > 0) {
+			if (data[0] == 0x41) {
+				if (data[1] == 0x14) {
+					textArea.appendText("Sector " + block/4 + " :Authentication " + cmd + " failed \n");
+					ret = false;
 				}
-			} finally {
-				destFile.close();
+				if (data[1] == 0x00) {
+					ret = true;
+				}
 			}
-		} catch (IOException e) {
-			e.printStackTrace();
 		}
+		return ret;
 	}
 	
-	@FXML
-	private void saveDump() {
-		File outputFile = new File( currentDir + "/nfc-bin64/sauvegardes/outputFile.mfd");
-		try {
-			Files.write(outputFile.toPath(), savingBuffer);
-			hexEditor.setData(outputFile);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}
-	
-	@FXML
-	private void openDump() {
-		hexEditor.getArea().clear();
-		FileChooser fileChooser = new FileChooser();
-		fileChooser.setInitialDirectory(new File( currentDir + "/nfc-bin64/sauvegardes"));
-		File selectedFile = fileChooser.showOpenDialog(null);
-		hexEditor.setData(selectedFile);
-	}
+	/*****************************  WRITING  *********************************/
 	
 	@FXML
 	private void writeNewTag() {
@@ -559,107 +474,48 @@ HexEditor hexEditor;
 	}
 	
 	@FXML
-	private void writeOldTag() {
+	private void formatTag() {
 		FileChooser fileChooser = new FileChooser();
 		fileChooser.setInitialDirectory(new File(currentDir + "/nfc-bin64/sauvegardes"));
 		File selectedFile = fileChooser.showOpenDialog(null);
-		try {
-			byte[] dumpData = Files.readAllBytes(selectedFile.toPath());
-			DumpDialog dialog = new DumpDialog();
-			Optional<Results> optionalResult = dialog.showAndWait();
-			optionalResult.ifPresent((Results results) -> {
-				byte[] accessBits = Util.decodeHexString(results.accessBits);
+		if (selectedFile != null) {
+			FormatDialog dialog = new FormatDialog();
+			Optional<mifareTools.FormatDialog.Results> optionalResult = dialog.showAndWait();
+			optionalResult.ifPresent((mifareTools.FormatDialog.Results results) -> {
+				if (results.authKeyA.isEmpty() || keyBMap == null) {
+					textArea.appendText(
+							"Please enter KeyA in the Format dialog , and read the Tag before trying to format, then restart Format dialog\n");
+					return;
+				}
 				byte[] authKeyA = Util.decodeHexString(results.authKeyA);
-				byte[] authKeyB = Util.decodeHexString(results.authKeyB);
-				//	First pass : write trailer with the keys of the tag and get keys from dump for the second pass
-				Map<Integer, byte[]> mapKeyA = new HashMap<>();
-				Map<Integer, byte[]> mapKeyB = new HashMap<>();
-				for (int block = 3; block < 64; block = block +4) {
-					int j =  block * 16;
-					byte[] frame = Arrays.copyOfRange(dumpData, j, j + 16);
-					mapKeyA.put((int) (block),  Arrays.copyOfRange(frame, 0, 6));
-					mapKeyB.put((int) (block), Arrays.copyOfRange(frame, 10, 16));
-					//System.out.println("blockKeyA " + block + " : " + Util.getByteHexString( Arrays.copyOfRange(frame, 0, 6)));
-					//System.out.println("blockKeyB " + block + " : " + Util.getByteHexString(Arrays.copyOfRange(frame, 10, 16)));
+				for (int block = 3; block < 64; block = block + 4) {
 					if (writeConditions.get(block).equals("")) {
 						textArea.appendText("No access conditions for block " + block + "\n");
 						return;
-					}else if (writeConditions.get(block).equals("KeyA")) {
+					} else if (writeConditions.get(block).equals("KeyA")) {
 						boolean auth = authenticateBlock((byte) (block), uid, authKeyA, CMD_MIFARE_AUTH_A);
 						if (auth) {
-							System.arraycopy(accessBits, 0, frame, 6, 4);
-							writeToBlock(frame, (byte) (block));
-						}else {
-							textArea.appendText("Authentication A failed, block " + block + "\n");
-						}
-					} else {
-						boolean auth = authenticateBlock((byte) (block), uid, authKeyB, CMD_MIFARE_AUTH_B);
-						if (auth) {
-							System.arraycopy(accessBits, 0, frame, 6, 4);
-							writeToBlock(frame, (byte) (block));
-						}else {
-							textArea.appendText("Authentication B failed, block " + block + "\n");
-						}
-					}					
-				}
-				// The keys of the tag are now those of the dump
-				// second pass : write others block after extracting Keys from their trailer sector
-				int blockTrailer = 3;
-				for (int block = 0; block < 64; block++) {
-					//first get trailer of the sector and do not overwrite it
-					if ((block + 1) % 4 == 0) {
-						if (block < 3) 
-							blockTrailer = 3;
-						 else 
-							blockTrailer = block + 4;
-					} else { // then authenticate with the keys extracted from the trailer
-						boolean auth = authenticateBlock((byte) (block), uid, mapKeyA.get(blockTrailer), CMD_MIFARE_AUTH_A);
-						if (!auth) {
-							auth = authenticateBlock((byte) (block), uid, mapKeyB.get(blockTrailer), CMD_MIFARE_AUTH_B);
-						}
-						if (auth) { // third write block
-							int j = block * 16;
-							byte[] frame = Arrays.copyOfRange(dumpData, j, j + 16);
-							writeToBlock(frame, (byte) (block));
-							textArea.appendText("Writing Block " + block + " " + Util.getByteHexString(frame) + "\n ");
+							writeToBlock(DEFAULT_TRAILER, (byte) (block));
 						} else {
-							textArea.appendText("Authentication failed, block " + block + "\n");
+							textArea.appendText("Authentication block " + block + "failed, \n");
+						}
+					} else if (writeConditions.get(block).equals("KeyB")) {
+						byte[] keyB = keyBMap.get(block);
+						boolean auth = authenticateBlock((byte) (block), uid, keyB, CMD_MIFARE_AUTH_A);
+						if (auth) {
+							writeToBlock(DEFAULT_TRAILER, (byte) (block));
+						} else {
+							textArea.appendText("Authentication block " + block + "failed, \n");
 						}
 					}
 				}
-				//System.out.println(Util.getByteHexString(uid)); //8829DA9DAF76 //484558414354
 			});
-		} catch (IOException e) {
-			e.printStackTrace();
 		}
 	}
 		
 
 	
-	private boolean authenticateBlock(byte block, byte[] uid, byte[] key, byte cmd) {
-		boolean ret = false;
-		byte[] command = new byte[13];
-		command[0] =  0x01; // card 1
-        command[1] = cmd;
-        command[2] = block;
-		System.arraycopy(key, 0, command, 3, key.length);
-		System.arraycopy(uid, 0, command, 9, uid.length);
-	    System.out.println("authCommand = " + Util.getByteHexString(command));
-	    callFunction(CMD_INDATAEXCHANGE, command);
-	    waitForResponse(50);			
-		if (data.length > 0) {
-			if (data[0] == 0x41) {
-				if (data[1] == 0x14) {
-					textArea.appendText("Sector " + block/4 + " :Authentication " + cmd + " failed \n");
-					ret = false;
-				}
-				if (data[1] == 0x00) {
-					ret = true;
-				}
-			}
-		}
-		return ret;
-	}
+
 	
 	@FXML
 	private void writeToBlock() {
@@ -736,6 +592,126 @@ HexEditor hexEditor;
 		}
 	}
 	
+	/****************************  Utility  ******************************************/
+	
+	
+	@FXML
+	public void mfcuk() {
+		textArea.appendText("Searching a key with mfcuk, waiting for response....\n");
+		serialPort.closePort();
+		serialPort.closePort();
+		Thread thread =new Thread(() -> {
+                ProcessBuilder processBuilder = new ProcessBuilder();
+                String basePath = currentDir + "/nfc-bin64/";
+                processBuilder.directory(new File(basePath));
+                processBuilder.command(basePath + "mfcuk.exe", "-C", "-R", "0:A", "-s 250", "-S 250", "-v 2");
+                try {
+                    Process process = processBuilder.start();
+                    InputStream inputStream = process.getInputStream();
+                    InputStream errorStream = process.getErrorStream();
+                    printStream(inputStream);
+                    printStream(errorStream);
+                    process.waitFor();
+                } catch (IOException | InterruptedException e) {
+                    e.printStackTrace();
+                }
+		});
+        thread.setDaemon(true);
+        thread.start();
+	}
+	
+	@FXML
+	public void searchKeys() {
+		String keysFile = (String) choiceSearchKeys.getSelectionModel().getSelectedItem();
+		textArea.appendText("Searching keys, waiting for response....\n");
+		serialPort.closePort();
+		Thread thread =new Thread(() -> {
+                ProcessBuilder processBuilder = new ProcessBuilder();
+                String basePath = currentDir + "/nfc-bin64/";
+                processBuilder.directory(new File(basePath));
+                processBuilder.command(basePath + "mfoc-hardnested.exe", "-f", basePath + keysFile, "-O", basePath + "sauvegardes/saved.mfd");
+                try {
+                    Process process = processBuilder.start();
+                    InputStream inputStream = process.getInputStream();
+                    InputStream errorStream = process.getErrorStream();
+                    printStream(inputStream);
+                    printStream(errorStream);
+                    process.waitFor();
+                } catch (IOException | InterruptedException e) {
+                    e.printStackTrace();
+                }
+	
+		});
+        thread.setDaemon(true);
+        thread.start();
+	}
+	
+	private void printStream(InputStream inputStream) {
+		try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream))) {
+			 String line;
+		        while ((line = bufferedReader.readLine()) != null) {
+		            final String finalLine = line; // Declare as final
+		            if (finalLine.endsWith("[................]")) {
+		            	int i = 0;
+		            	 Platform.runLater(() -> textArea.appendText("."));
+							if (i > 100) {
+								Platform.runLater(() -> textArea.appendText("\n"));
+								i = 0;
+							}
+		            } else {
+		                Platform.runLater(() -> textArea.appendText(finalLine + "\n"));
+		            }
+		        }
+		} catch (IOException e1) {
+			e1.printStackTrace();
+		}
+	}
+		
+	public void saveModifiedDump() {
+		String classChanged = hexEditor.getContent();
+		try {
+			File saved = new File(currentDir +"/nfc-bin64/sauvegardes/modified.mfd");
+			byte[] data = Util.decodeHexString(classChanged);
+			FileOutputStream destFile = new FileOutputStream(saved);
+			try {
+				ByteArrayInputStream dataBytes = new ByteArrayInputStream(data);
+				try {
+					byte buffer[] = new byte[1024];
+					int n;
+					while ((n = dataBytes.read(buffer)) != -1) {
+						destFile.write(buffer, 0, n);
+					}
+				} finally {
+					dataBytes.close();
+				}
+			} finally {
+				destFile.close();
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	@FXML
+	private void saveDump() {
+		File outputFile = new File( currentDir + "/nfc-bin64/sauvegardes/outputFile.mfd");
+		try {
+			Files.write(outputFile.toPath(), savingBuffer);
+			hexEditor.setData(outputFile);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	@FXML
+	private void openDump() {
+		hexEditor.getArea().clear();
+		FileChooser fileChooser = new FileChooser();
+		fileChooser.setInitialDirectory(new File( currentDir + "/nfc-bin64/sauvegardes"));
+		File selectedFile = fileChooser.showOpenDialog(null);
+		hexEditor.setData(selectedFile);
+	}
+	
 	@FXML
 	public void testAccessBits() {
 		if (tfAccessBits.getText().isEmpty()) {
@@ -758,7 +734,8 @@ HexEditor hexEditor;
 		data = new byte[0];
 	}
 	
-
+	/*************************  TAG CONNEXION  ***************************/
+	
 	@FXML
 	public void connect() {
 		boolean opened = serialPort.openPort();

@@ -47,6 +47,8 @@ It will write the default keys on the trailer blocks and the default access cond
  At the bottom there is another button who can test the access condition. Put the three bytes and click
  The program only decode. If you want to encode you can go to this webside : https://slebe.dev/mifarecalc/
 
- 
+***** Nota bene ******
+
+There is two version of MifareMainController. I let the one without concurrency because it is easier for understandic the logic
  
  ![Optional Text](https://github.com/dochex/mifarePn532Tool/blob/main/documentation/program.PNG)

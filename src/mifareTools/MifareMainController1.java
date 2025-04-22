@@ -32,7 +32,7 @@ import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.stage.FileChooser;
-import mifareTools.DumpDialog.Results;
+import mifareTools.FormatDialog.Results;
 
 import java.util.function.Consumer;
 
@@ -144,10 +144,9 @@ HexEditor hexEditor;
 		tfBlock.setTextFormatter(new TextFormatter<String>(change -> change.getControlNewText().matches("^[0-9]{0,2}$") ? change : null));
 		tfAccessBits.setTextFormatter(new TextFormatter<String>(change -> change.getControlNewText().matches("^[0-9A-F]{0,6}$") ? change : null));
 		tfKeyForWriting.setTextFormatter(new TextFormatter<String>(change -> change.getControlNewText().matches("^[0-9A-F]{0,12}$") ? change : null));
-		final MenuItem item1 = new MenuItem("Sauvegarder les modifications");
+		final MenuItem item1 = new MenuItem("Save the changes");
 		item1.setOnAction(new EventHandler<ActionEvent>() {
 		    public void handle(ActionEvent e) {
-		        System.out.println("Sauvegarde les modifications");
 		        saveModifiedDump();
 		    }
 		});
@@ -493,12 +492,9 @@ HexEditor hexEditor;
 	}
 	
 	public void writeAccessMap(byte blockNumber, byte[] bytesAccess) {
-		//System.out.println(Util.getByteHexString(bytesAccess));
 		boolean c1 = SectorTrailerUtil.getBitByPos(bytesAccess[0], 7);
 		boolean c2 = SectorTrailerUtil.getBitByPos(bytesAccess[1], 3);
 		boolean c3 = SectorTrailerUtil.getBitByPos(bytesAccess[1], 7);
-		String trailerAccess = SectorTrailerUtil.decodeTrailerAccess(c1, c2, c3);
-		//System.out.println(SectorTrailerUtil.isWritingKey(c1, c2, c3));
 		writeConditions.put((int) blockNumber, SectorTrailerUtil.isWritingKey(c1, c2, c3));
 	}
 	
@@ -703,45 +699,39 @@ HexEditor hexEditor;
 		File selectedFile = fileChooser.showOpenDialog(null);
 		if (selectedFile != null) {
 			SerialPortThreadFactory.submit(() -> {
-				try {
-					byte[] dumpData = Files.readAllBytes(selectedFile.toPath());
-					Platform.runLater(() -> {
-						FormatDialog dialog = new FormatDialog();
-						Optional<mifareTools.FormatDialog.Results> optionalResult = dialog.showAndWait();
-						optionalResult.ifPresent((mifareTools.FormatDialog.Results results) -> {
-							if (results.authKeyA.isEmpty() || keyBMap == null) {
-								textArea.appendText("Please enter KeyA in the Format dialog , and read the Tag before trying to format, then restart Format dialog\n");
-								return;
+				Platform.runLater(() -> {
+					FormatDialog dialog = new FormatDialog();
+					Optional<Results> optionalResult = dialog.showAndWait();
+					optionalResult.ifPresent((Results results) -> {
+						if (results.authKeyA.isEmpty() || keyBMap == null) {
+							textArea.appendText("Please enter KeyA in the Format dialog , and read the Tag before trying to format, then restart Format dialog\n");
+							return;
+						}
+						byte[] authKeyA = Util.decodeHexString(results.authKeyA);
+						SerialPortThreadFactory.submit(() -> {
+							try {
+								writeAllTrailers( authKeyA,
+										() -> {
+											Platform.runLater(() -> textArea.appendText("Formatting trailer blocks ended\n"));
+										});
+							} catch (Exception e) {
+								e.printStackTrace();
+								Platform.runLater(
+										() -> textArea.appendText("Error writing dump: " + e.getMessage() + "\n"));
 							}
-							byte[] authKeyA = Util.decodeHexString(results.authKeyA);
-							SerialPortThreadFactory.submit(() -> {
-								try {
-									writeAllTrailers(dumpData, authKeyA,
-											() -> {
-												Platform.runLater(() -> textArea.appendText("Formatting trailer blocks ended\n"));
-											});
-								} catch (Exception e) {
-									e.printStackTrace();
-									Platform.runLater(
-											() -> textArea.appendText("Error writing dump: " + e.getMessage() + "\n"));
-								}
-							});
 						});
 					});
-				} catch (IOException e) {
-					e.printStackTrace();
-					Platform.runLater(() -> textArea.appendText("Error reading dump file: " + e.getMessage() + "\n"));
-				}
+				});
 			});
 		}
 					
 	}
 	
-	private void writeAllTrailers(byte[] dumpData, byte[] authKeyA, Runnable onComplete) {
-		 authAndWriteTrailer(0, dumpData, authKeyA, onComplete);
+	private void writeAllTrailers( byte[] authKeyA, Runnable onComplete) {
+		 authAndWriteTrailer(0, authKeyA, onComplete);
 	}
 	
-	private void authAndWriteTrailer(int blockIndex, byte[] dumpData, byte[] authKeyA, Runnable onComplete) {
+	private void authAndWriteTrailer(int blockIndex, byte[] authKeyA, Runnable onComplete) {
 		// Only process sector trailer blocks (block % 4 == 3)
 		if (blockIndex >= 64) {
 			// All sectors processed, run completion callback
@@ -751,46 +741,43 @@ HexEditor hexEditor;
 			return;
 		}
 		if (blockIndex % 4 == 3) {
-			int j = blockIndex * 16;
-			byte[] frame = Arrays.copyOfRange(dumpData, j, j + 16);
-			byte[]keyB = keyBMap.get(blockIndex);
-			// Authenticate with provided keys
 			System.out.println(writeConditions.get(blockIndex));
 			if (writeConditions.get(blockIndex).equals("")) {
 				textArea.appendText("Write forbidden for block " + blockIndex + "\n");
-				authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+				authAndWriteTrailer(blockIndex + 1, authKeyA, onComplete);
 			} else if (writeConditions.get(blockIndex).equals("KeyA")) {
 				authenticateBlock((byte) blockIndex, uid, authKeyA, CMD_MIFARE_AUTH_A, authResult -> {
 					if (authResult) {
 						// Authentication with Key A successful
 						formatTrailerBlock(blockIndex, () -> {
 							// Continue with next block
-							authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+							authAndWriteTrailer(blockIndex + 1, authKeyA, onComplete);
 						});
 					} else {
 						Platform.runLater(() -> textArea.appendText("Authentication failed for trailer block " + blockIndex + "\n"));
 						// Skip this block and continue
-						authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+						authAndWriteTrailer(blockIndex + 1, authKeyA, onComplete);
 					}
 				});
 			} else if (writeConditions.get(blockIndex).equals("KeyB")) {
+				byte[]keyB = keyBMap.get(blockIndex);
 				authenticateBlock((byte) blockIndex, uid, keyB, CMD_MIFARE_AUTH_B, authBResult -> {
 					if (authBResult) {
 						// Authentication with Key B successful
 						formatTrailerBlock(blockIndex, () -> {
 							// Continue with next block
-							authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+							authAndWriteTrailer(blockIndex + 1, authKeyA, onComplete);
 						});
 					} else {
 						Platform.runLater(() -> textArea.appendText("Authentication failed for trailer block " + blockIndex + "\n"));
 						// Skip this block and continue
-						authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+						authAndWriteTrailer(blockIndex + 1, authKeyA, onComplete);
 					}
 				});
 			}
 		} else {
 			//System.out.println("Not a trailer block, skip to next block");
-			authAndWriteTrailer(blockIndex + 1, dumpData, authKeyA, onComplete);
+			authAndWriteTrailer(blockIndex + 1, authKeyA, onComplete);
 		}
 	}
 	
