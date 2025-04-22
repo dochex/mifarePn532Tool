@@ -510,7 +510,7 @@ HexEditor hexEditor;
 	                        //System.out.println("Authentication" + cmd + " successful for block " + block);
 	                    } else {
 	                        //System.out.println("Authentication " + cmd + " failed for block " + block + " with code: " +  String.format("0x%02X", data[1] & 0xFF));
-	                        final String message = "Sector " + block/4 + " :Authentication A failed with code: " + String.format("0x%02X", data[1] & 0xFF) + "\n";
+	                        final String message = "Sector " + block/4 + " :Authentication  " + cmd + "  failed with code: " + String.format("0x%02X", data[1] & 0xFF) + "\n";
 	                        Platform.runLater(() -> textArea.appendText(message));
 	                    }
 	                } else {
